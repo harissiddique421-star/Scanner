@@ -1,0 +1,14 @@
+{
+  "id": "./",
+  "name": "Register Scanner",
+  "short_name": "Scanner",
+  "description": "Capture a register page, review extracted text, and export CSV.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#123d32",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

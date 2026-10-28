@@ -21,7 +21,7 @@ button:disabled{opacity:.45;cursor:not-allowed}#preview{width:100%;max-height:34
 #status{font-size:13px;color:var(--green);font-weight:650;line-height:1.5;white-space:pre-wrap}
 textarea{width:100%;min-height:230px;resize:vertical;border:1px solid #cbd8d1;border-radius:12px;padding:12px;font:15px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#15251e}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row button{width:100%}.small{font-size:12px;color:var(--muted);line-height:1.5}
-.progress{height:6px;background:#e7eeea;border-radius:9px;overflow:hidden;margin:10px 0}.progress span{display:block;height:100%;width:0;background:#248766;transition:width .2s}
+.entry-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.entry-grid input{min-width:0;width:100%;padding:10px;border:1px solid #cbd8d1;border-radius:9px;font-size:14px}.entry-head{font-size:12px;font-weight:700;color:var(--muted)}.entry{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.entry input{min-width:0;width:100%;padding:10px;border:1px solid #cbd8d1;border-radius:9px;font-size:14px}.entry button{grid-column:1/-1;padding:8px;font-size:12px}.progress{height:6px;background:#e7eeea;border-radius:9px;overflow:hidden;margin:10px 0}.progress span{display:block;height:100%;width:0;background:#248766;transition:width .2s}
 footer{text-align:center;font-size:12px;color:var(--muted);padding:4px 10px 18px}
 @media(min-width:600px){main{padding-top:22px}.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.two .card{height:100%}}
 </style>
@@ -49,7 +49,19 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:4px 10px 18px
 <button class="secondary" id="clear" type="button">Clear</button>
 </div>
 <button class="primary" id="csv" type="button">Download CSV for Google Sheets</button>
-<p class="small">CSV mein har non-empty line alag row mein aayegi. Ye app automatically names/phone numbers ko columns mein guess nahi karti, kyun ke ghalat guess data bigaar sakta hai.</p>
+<p class="small">OCR ki lines ko naam aur contact mein arrange karne ke liye neeche table banao. Auto-detection sirf andaza hai—har entry register se check karo.</p>
+<button class="primary" id="makeTable" type="button">Make Name / Contact Table</button>
+</section>
+<section class="card">
+<h2>3. Name and Contact table</h2>
+<p class="help">Naam aur phone number ko alag columns mein edit kar sakte ho. Auto-detected entries ko original register se verify karna zaroori hai.</p>
+<div class="entry-grid"><div class="entry-head">NAME</div><div class="entry-head">CONTACT NUMBER</div></div>
+<div id="entries"></div>
+<div class="row">
+<button class="secondary" id="addEntry" type="button">+ Add row</button>
+<button class="secondary" id="exportTable" type="button">Download table CSV</button>
+</div>
+<p class="small">CSV Google Sheets mein do columns: Name aur Contact Number ke saath khulegi.</p>
 </section>
 <section class="card">
 <h2>Install on Android</h2>
@@ -99,10 +111,49 @@ $('csv').addEventListener('click',()=>{
  const value=$('text').value.trim();if(!value){say('Pehle scan karein ya text paste karein.');return;}
  const rows=value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
  const quote=s=>'"'+s.replace(/"/g,'""')+'"';
- const csv='Scanned Line\r\n'+rows.map(quote).join('\r\n');
- const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='register-scan.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
- say('CSV download ho gayi. Google Sheets mein import/open karein.');
+ downloadCsv('register-raw-text.csv','Scanned Line\r\n'+rows.map(quote).join('\r\n'));
+ say('Raw OCR CSV download ho gayi.');
+});
+function downloadCsv(filename,content){
+ const blob=new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function addEntry(name='',phone=''){
+ const row=document.createElement('div');row.className='entry';
+ const n=document.createElement('input');n.placeholder='Name';n.value=name;n.setAttribute('aria-label','Name');
+ const p=document.createElement('input');p.placeholder='Contact number';p.value=phone;p.setAttribute('aria-label','Contact number');
+ const del=document.createElement('button');del.className='secondary';del.type='button';del.textContent='Remove row';del.addEventListener('click',()=>row.remove());
+ row.append(n,p,del);$('entries').appendChild(row);
+}
+$('addEntry').addEventListener('click',()=>addEntry());
+$('makeTable').addEventListener('click',()=>{
+ const lines=$('text').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+ if(!lines.length){say('Pehle scan karein ya OCR text paste karein.');return;}
+ $('entries').innerHTML='';
+ // Best-effort Pakistani phone detection; review every result because OCR may confuse digits.
+ const phoneRe=/(?:\+?92[\s-]?)?0?3\d{2}[\s-]?\d{7}|(?:021|042|051)[\s-]?\d{6,8}/g;
+ let found=0;
+ for(const line of lines){
+   const matches=[...line.matchAll(phoneRe)];
+   if(!matches.length){addEntry(line,'');continue;}
+   let last=0;
+   for(let i=0;i<matches.length;i++){
+     const m=matches[i], before=line.slice(last,m.index).replace(/[|:;,.\-]+$/,'').trim();
+     const name=before.replace(/^[|:;,.\-\s]+/,'').trim();
+     addEntry(name,m[0].replace(/[\s-]/g,''));
+     found++;last=m.index+m[0].length;
+   }
+   const tail=line.slice(last).trim();
+   if(tail)addEntry(tail,'');
+ }
+ say('Table ban gayi. '+found+' possible phone numbers detect hue. Har naam/number register se verify karein.');
+});
+$('exportTable').addEventListener('click',()=>{
+ const rows=[...$('entries').querySelectorAll('.entry')];
+ if(!rows.length){say('Pehle Make Name / Contact Table ya Add row dabayein.');return;}
+ const q=s=>'"'+s.replace(/"/g,'""')+'"';
+ const data=[q('Name')+','+q('Contact Number'),...rows.map(r=>[...r.querySelectorAll('input')].map(i=>q(i.value.trim())).join(','))].join('\r\n');
+ downloadCsv('register-contacts.csv',data);say('Name aur Contact Number wali CSV download ho gayi.');
 });
 $('copy').addEventListener('click',async()=>{if(!$('text').value){say('Copy karne ke liye text nahi hai.');return;}try{await navigator.clipboard.writeText($('text').value);say('Text copied.')}catch{ $('text').select();say('Text select kar diya hai. Copy command use karein.');}});
 $('clear').addEventListener('click',()=>{$('text').value='';say('Text clear kar diya.');});
